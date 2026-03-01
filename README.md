@@ -37,8 +37,6 @@ ResearchMix is an audio-first “Spotify for research papers” experience: it r
 - **Mistral LLM** for summaries, deep dives, recommendations, and Q&A
 - **ElevenLabs TTS** for spoken narration
 
-> Note: For the hackathon MVP, playlists and search generate *plausible* paper metadata via the LLM (not arXiv-backed yet). We designed the architecture so swapping in arXiv/alphaXiv is straightforward.
-
 ---
 
 ## Agentic / Agentic Workflows (highlight)
