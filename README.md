@@ -109,3 +109,49 @@ MISTRAL_STT_MODEL=voxtral-mini-transcribe-2507
 ```bash
 streamlit run app.py
 ```
+
+---
+
+## How to use
+
+### Home
+
+- See Continue (last played)
+
+- Browse Recommended and Trending
+
+- Use Search (LLM-synth MVP) to generate relevant papers
+
+### Paper
+
+- Generate Quick Summary and Deep Dive
+
+- Click Narrate to listen
+
+### Chat
+
+- Ask questions via voice or text
+
+- Responses are paper-scoped to the selected paper
+
+### Library
+
+- History: previously played papers
+
+- Saved: bookmarked papers
+
+- Quick access to playlists
+
+---
+
+## Cost/safety controls
+
+- Max characters to speak slider limits TTS cost and avoids overly long audio
+
+- Prompts encourage concise, structured answers and avoid overclaiming
+
+- Session state isolates user interactions within a run
+
+---
+
+## Team
