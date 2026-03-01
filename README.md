@@ -155,3 +155,17 @@ streamlit run app.py
 ---
 
 ## Team
+
+Team Name: Fair Game
+
+<table>
+  <tr>
+    <td align="center">
+      <a href="https://github.com/srimoyee1212">
+        <img src="https://github.com/srimoyee1212.png" width="100px;" alt="srimoyee1212"/>
+        <br />
+        <sub><b>Srimoyee Mukhopadhyay</b></sub>
+      </a>
+    </td>
+  </tr>
+</table>
