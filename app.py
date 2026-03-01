@@ -23,7 +23,7 @@ ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "EXAVITQu4vr4xnSDxMaL")  
 DEFAULT_LLM_MODEL = os.getenv("MISTRAL_LLM_MODEL", "mistral-tiny-latest")
 DEFAULT_STT_MODEL = os.getenv("MISTRAL_STT_MODEL", "voxtral-mini-transcribe-2507")
 
-# Dummy auth (for hackathon/demo)
+# Dummy auth (hackathon/demo)
 # You can override via .env:
 # DEMO_USERS_JSON='{"srimoyee":"pass123","judge":"demo"}'
 DEMO_USERS_JSON = os.getenv("DEMO_USERS_JSON", "")
@@ -112,26 +112,48 @@ def elevenlabs_tts(text: str, voice_id: str) -> bytes:
 
 
 # ----------------------------
-# arXiv API (Atom feed parsing)
+# Small text utils
 # ----------------------------
-ARXIV_API = "http://export.arxiv.org/api/query"
-
-
 def _strip(s: str) -> str:
     return (s or "").strip()
-
 
 def _clean_ws(s: str) -> str:
     return re.sub(r"\s+", " ", _strip(s))
 
+def first_sentence(text: str, max_len: int = 180) -> str:
+    """
+    Returns the first sentence-ish chunk for card previews.
+    """
+    t = _clean_ws(text or "")
+    if not t:
+        return ""
+    # sentence boundary: . ! ? (fallback to max_len)
+    m = re.search(r"^(.{20,}?[.!?])\s", t)
+    if m:
+        s = m.group(1).strip()
+    else:
+        s = t[:max_len].strip()
+    if len(s) > max_len:
+        s = s[:max_len].rstrip() + "…"
+    return s
 
-def arxiv_query(
-    search_query: str,
-    start: int = 0,
-    max_results: int = 10,
-    sortBy: str = "submittedDate",
-    sortOrder: str = "descending",
-) -> List[Dict[str, Any]]:
+
+# ----------------------------
+# arXiv API (Atom feed parsing) — cached
+# ----------------------------
+ARXIV_API = "http://export.arxiv.org/api/query"
+ATOM_NS = {"atom": "http://www.w3.org/2005/Atom", "arxiv": "http://arxiv.org/schemas/atom"}
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def arxiv_query(search_query: str, start: int = 0, max_results: int = 10,
+               sortBy: str = "submittedDate", sortOrder: str = "descending") -> List[Dict[str, Any]]:
+    """
+    Cached arXiv query.
+    search_query examples:
+      - all:transformer
+      - ti:"vision language" AND cat:cs.CV
+      - cat:cs.AI OR cat:cs.LG
+    """
     params = {
         "search_query": search_query,
         "start": start,
@@ -144,28 +166,30 @@ def arxiv_query(
         raise RuntimeError(f"arXiv API error {r.status_code}: {r.text[:400]}")
 
     root = ET.fromstring(r.text)
-    ns = {"atom": "http://www.w3.org/2005/Atom", "arxiv": "http://arxiv.org/schemas/atom"}
+    entries: List[Dict[str, Any]] = []
 
-    entries = []
-    for entry in root.findall("atom:entry", ns):
-        entry_id = _strip(entry.findtext("atom:id", default="", namespaces=ns))
-        title = _clean_ws(entry.findtext("atom:title", default="", namespaces=ns))
-        summary = _clean_ws(entry.findtext("atom:summary", default="", namespaces=ns))
-        published = _strip(entry.findtext("atom:published", default="", namespaces=ns))
-        updated = _strip(entry.findtext("atom:updated", default="", namespaces=ns))
+    for entry in root.findall("atom:entry", ATOM_NS):
+        entry_id = _strip(entry.findtext("atom:id", default="", namespaces=ATOM_NS))
+        title = _clean_ws(entry.findtext("atom:title", default="", namespaces=ATOM_NS))
+        summary = _clean_ws(entry.findtext("atom:summary", default="", namespaces=ATOM_NS))
+        published = _strip(entry.findtext("atom:published", default="", namespaces=ATOM_NS))
+        updated = _strip(entry.findtext("atom:updated", default="", namespaces=ATOM_NS))
 
-        authors = []
-        for a in entry.findall("atom:author", ns):
-            name = _strip(a.findtext("atom:name", default="", namespaces=ns))
+        # authors
+        authors: List[str] = []
+        for a in entry.findall("atom:author", ATOM_NS):
+            name = _strip(a.findtext("atom:name", default="", namespaces=ATOM_NS))
             if name:
                 authors.append(name)
 
-        cats = []
-        for c in entry.findall("atom:category", ns):
+        # categories (topics)
+        cats: List[str] = []
+        for c in entry.findall("atom:category", ATOM_NS):
             term = c.attrib.get("term", "")
             if term:
                 cats.append(term)
 
+        # derive arXiv id
         paper_id = ""
         if entry_id:
             m = re.search(r"arxiv\.org/abs/([^/]+)$", entry_id)
@@ -175,28 +199,27 @@ def arxiv_query(
         if published and len(published) >= 4 and published[:4].isdigit():
             year = int(published[:4])
 
+        # PDF link
         pdf_url = ""
-        for link in entry.findall("atom:link", ns):
+        for link in entry.findall("atom:link", ATOM_NS):
             if link.attrib.get("title") == "pdf":
                 pdf_url = link.attrib.get("href", "")
                 break
 
-        entries.append(
-            {
-                "paper_id": paper_id,
-                "title": title or "Untitled (arXiv)",
-                "authors": authors,
-                "year": year or 2025,
-                "abstract": summary,
-                "topics": cats,
-                "source": "arxiv",
-                "arxiv_id": paper_id.replace("arxiv:", ""),
-                "url": entry_id,
-                "pdf_url": pdf_url,
-                "published": published,
-                "updated": updated,
-            }
-        )
+        entries.append({
+            "paper_id": paper_id,
+            "title": title or "Untitled (arXiv)",
+            "authors": authors,
+            "year": year or 2025,
+            "abstract": summary,
+            "topics": cats,
+            "source": "arxiv",
+            "arxiv_id": paper_id.replace("arxiv:", ""),
+            "url": entry_id,
+            "pdf_url": pdf_url,
+            "published": published,
+            "updated": updated,
+        })
 
     return entries
 
@@ -207,19 +230,25 @@ def arxiv_search_free_text(query: str, max_results: int = 10) -> List[Dict[str, 
 
 
 def arxiv_trending_default(max_results: int = 12) -> List[Dict[str, Any]]:
-    cat_query = "cat:cs.AI OR cat:cs.LG OR cat:cs.CL"
-    return arxiv_query(search_query=cat_query, start=0, max_results=max_results)
+    cat_query = "cat:cs.AI OR cat:cs.LG OR cat:cs.CL OR cat:cs.CV"
+    return arxiv_query(search_query=cat_query, start=0, max_results=max_results,
+                       sortBy="submittedDate", sortOrder="descending")
 
 
 # ----------------------------
-# State: per-user buckets
+# State: global + per-user buckets
 # ----------------------------
 def _ensure_global_state():
     if "auth" not in st.session_state:
         st.session_state.auth = {"logged_in": False, "username": None}
     if "users" not in st.session_state:
-        st.session_state.users = {}  # username -> bucket
-
+        st.session_state.users = {}
+    if "nav" not in st.session_state:
+        st.session_state.nav = "Home"  # Home | Paper | Chat | Library
+    if "nav_target" not in st.session_state:
+        st.session_state.nav_target = None
+    if "chat_prefill" not in st.session_state:
+        st.session_state.chat_prefill = ""
 
 _ensure_global_state()
 
@@ -246,15 +275,6 @@ def _u() -> Dict[str, Any]:
     return st.session_state.users[username]
 
 
-def _username() -> str:
-    return st.session_state.auth.get("username") or "__anon__"
-
-
-def uk(*parts: str) -> str:
-    safe = [str(p) for p in parts if p is not None]
-    return f"{_username()}::" + "::".join(safe)
-
-
 # ----------------------------
 # Dummy login gate
 # ----------------------------
@@ -263,11 +283,11 @@ def render_login():
     st.caption("Hackathon demo login (dummy auth).")
 
     with st.container(border=True):
-        username = st.text_input("Username", placeholder="demo / judge / fairgame", key="login_user")
-        password = st.text_input("Password", type="password", placeholder="demo / demo / researchmix", key="login_pass")
+        username = st.text_input("Username", placeholder="demo / judge / fairgame")
+        password = st.text_input("Password", type="password", placeholder="demo / demo / researchmix")
         c1, c2 = st.columns([1, 1])
         with c1:
-            if st.button("Log in", type="primary", use_container_width=True, key="login_btn"):
+            if st.button("Log in", type="primary", use_container_width=True):
                 if username in DEMO_USERS and DEMO_USERS[username] == password:
                     st.session_state.auth["logged_in"] = True
                     st.session_state.auth["username"] = username
@@ -277,7 +297,7 @@ def render_login():
                 else:
                     st.error("Invalid username/password.")
         with c2:
-            if st.button("Use demo account", use_container_width=True, key="login_demo"):
+            if st.button("Use demo account", use_container_width=True):
                 st.session_state.auth["logged_in"] = True
                 st.session_state.auth["username"] = "demo"
                 _u()
@@ -290,6 +310,22 @@ def render_login():
 if not st.session_state.auth.get("logged_in"):
     render_login()
     st.stop()
+
+
+# ----------------------------
+# Navigation helpers (replaces tabs so we can jump pages)
+# ----------------------------
+NAV_PAGES = ["Home", "Paper", "Chat", "Library"]
+
+def goto(page: str):
+    if page in NAV_PAGES:
+        st.session_state.nav_target = page
+        st.rerun()
+
+# Apply pending nav BEFORE the widget is created (prevents session_state key errors)
+if st.session_state.nav_target in NAV_PAGES:
+    st.session_state.nav = st.session_state.nav_target
+    st.session_state.nav_target = None
 
 
 # ----------------------------
@@ -333,7 +369,7 @@ def set_selected_paper(paper_id: str):
 
 
 # ----------------------------
-# Personalization + prompts
+# Prompts (paper-aware)
 # ----------------------------
 def paper_aware_system_prompt(paper: Optional[Dict[str, Any]]) -> str:
     base = (
@@ -348,7 +384,7 @@ def paper_aware_system_prompt(paper: Optional[Dict[str, Any]]) -> str:
     title = paper.get("title", "Unknown title")
     abstract = paper.get("abstract", "")
     topics = paper.get("topics", [])
-    topics_str = ", ".join(topics) if topics else "unknown"
+    topics_str = ", ".join(topics[:8]) if topics else "unknown"
 
     return (
         base
@@ -360,34 +396,8 @@ def paper_aware_system_prompt(paper: Optional[Dict[str, Any]]) -> str:
     )
 
 
-def build_recommended_arxiv_query() -> str:
-    bucket = _u()
-    interests = bucket["user_profile"].get("interests") or []
-
-    hist_titles = []
-    for pid in bucket["history"][:3]:
-        p = get_paper(pid)
-        if p and p.get("title"):
-            hist_titles.append(p["title"])
-
-    tokens = []
-    tokens.extend(interests[:5])
-    for t in hist_titles:
-        for w in re.findall(r"[A-Za-z][A-Za-z\-]{2,}", t.lower()):
-            if w not in ("the", "and", "for", "with", "from", "via", "using", "toward", "towards"):
-                tokens.append(w)
-    tokens = [t for t in tokens if t][:8]
-
-    if not tokens:
-        return "cat:cs.AI OR cat:cs.LG OR cat:cs.CL OR cat:cs.CV"
-
-    clauses = [f"all:{tok}" for tok in tokens[:4]]
-    cat = "(cat:cs.AI OR cat:cs.LG OR cat:cs.CL OR cat:cs.CV)"
-    return f"({ ' AND '.join(clauses) }) AND {cat}"
-
-
 # ----------------------------
-# LLM: summaries + deep dive + suggested Qs
+# LLM summarizers / explainers
 # ----------------------------
 def llm_quick_summary(paper: dict, model: str) -> str:
     sys = (
@@ -438,82 +448,21 @@ def llm_deep_dive(paper: dict, model: str) -> str:
     )
 
 
-def llm_suggested_questions(paper: Dict[str, Any], model: str) -> List[str]:
-    sys = (
-        "Generate suggested questions a user can ask about a research paper.\n"
-        "Output MUST be JSON only: an array of 6 short questions.\n"
-        "No markdown.\n"
-    )
-    user = (
-        f"TITLE: {paper.get('title','')}\n"
-        f"ABSTRACT:\n{paper.get('abstract','')}\n"
-        f"Generate 6 questions."
-    )
-    out = mistral_chat_raw(
-        messages=[{"role": "system", "content": sys}, {"role": "user", "content": user}],
-        model=model,
-        temperature=0.5,
-        max_tokens=350,
-    )
-    try:
-        js = json.loads(out)
-    except Exception:
-        # simple fallback parse
-        t = out.strip()
-        if t.startswith("```"):
-            parts = t.split("```")
-            if len(parts) >= 2:
-                t = parts[1].strip()
-                if "\n" in t and t.split("\n", 1)[0].strip().lower() in ("json", "javascript"):
-                    t = t.split("\n", 1)[1].strip()
-        try:
-            js = json.loads(t)
-        except Exception:
-            js = None
-
-    if isinstance(js, list):
-        qs = [q.strip() for q in js if isinstance(q, str) and q.strip()]
-        return qs[:6]
-    return []
-
-
-# ----------------------------
-# Navigation (CRITICAL FIX)
-# ----------------------------
-NAV_KEY = uk("nav")
-NAV_NEXT_KEY = uk("nav_next")
-
-# apply pending navigation BEFORE creating the radio widget
-if NAV_NEXT_KEY in st.session_state:
-    st.session_state[NAV_KEY] = st.session_state[NAV_NEXT_KEY]
-    del st.session_state[NAV_NEXT_KEY]
-
-if NAV_KEY not in st.session_state:
-    st.session_state[NAV_KEY] = "Home"
-
-
-def goto(page_name: str):
-    """
-    Schedule navigation safely (cannot set NAV_KEY after radio is instantiated).
-    """
-    st.session_state[NAV_NEXT_KEY] = page_name
-    st.rerun()
-
-
 # ----------------------------
 # UI components
 # ----------------------------
 def render_top_bar():
+    username = st.session_state.auth.get("username")
     c1, c2, c3 = st.columns([6, 2, 2])
     c1.title("🎙️ ResearchMix")
-    c1.caption("arXiv-powered discovery • clean judge-friendly flow • Voice Q&A + narrations")
-    if c2.button("🚪 Log out", use_container_width=True, key=uk("auth", "logout")):
+    c1.caption("arXiv-powered discovery • One-click summaries • Voice Q&A")
+    if c2.button("🚪 Log out", use_container_width=True):
         st.session_state.auth = {"logged_in": False, "username": None}
         st.rerun()
-    c3.write(f"👤 **{_username()}**")
+    c3.write(f"👤 **{username}**")
 
 
-def render_last_played_bar():
+def render_now_playing_compact():
     bucket = _u()
     pid = bucket.get("last_played")
     if not pid:
@@ -522,197 +471,223 @@ def render_last_played_bar():
     if not p:
         return
 
-    with st.container(border=True):
-        st.markdown(f"**Last played:** {p.get('title','Unknown')} ({p.get('year','')})")
-        links = []
-        if p.get("url"):
-            links.append(f"[arXiv]({p['url']})")
-        if p.get("pdf_url"):
-            links.append(f"[PDF]({p['pdf_url']})")
-        if links:
-            st.caption(" • ".join(links))
+    title = p.get("title", "Unknown")
+    year = p.get("year", "")
+    source = p.get("source", "")
 
-        if st.button("📄 Open", use_container_width=True, key=uk("last", "open", pid)):
-            _u()["selected_paper"] = pid
+    with st.container(border=True):
+        c1, c2, c3 = st.columns([7, 1.5, 1.5])
+        c1.markdown(f"**Last played:** {title} ({year})" + (f" · `{source}`" if source else ""))
+        if c2.button("Open", key="np_open", use_container_width=True):
+            bucket["selected_paper"] = pid
             goto("Paper")
+        if c3.button("Speak last", key="np_speak", use_container_width=True, disabled=bucket.get("tts_last_audio") is None):
+            if bucket.get("tts_last_audio"):
+                st.audio(bucket["tts_last_audio"], format="audio/mpeg")
 
 
 def paper_card_home(paper_id: str, section: str):
     """
-    Home cards: minimal + ONE Open button that jumps to Paper.
+    Super simple Home card:
+    - title + meta
+    - 1 sentence abstract
+    - Open (+ PDF if available)
     """
     bucket = _u()
     p = get_paper(paper_id)
     if not p:
         return
 
+    title = p.get("title", "Untitled")
+    authors = p.get("authors") or []
+    year = p.get("year", "")
+    topics = p.get("topics") or []
+    abstract = p.get("abstract", "")
+    pdf_url = p.get("pdf_url", "")
+    url = p.get("url", "")
+
+    meta_parts = []
+    if authors:
+        meta_parts.append(", ".join(authors[:2]) + (" et al." if len(authors) > 2 else ""))
+    if year:
+        meta_parts.append(str(year))
+    if topics:
+        meta_parts.append(" • ".join(topics[:2]))
+
     with st.container(border=True):
-        st.markdown(f"**{p.get('title','Unknown')}**")
+        st.markdown(f"**{title}**")
+        if meta_parts:
+            st.caption(" | ".join(meta_parts))
 
-        meta = []
-        authors = p.get("authors") or []
-        if authors:
-            meta.append(", ".join(authors[:3]) + (" et al." if len(authors) > 3 else ""))
-        if p.get("year"):
-            meta.append(str(p["year"]))
-        topics = p.get("topics") or []
-        if topics:
-            meta.append(" • ".join(topics[:3]))
-        if p.get("source"):
-            meta.append(p["source"])
-        if meta:
-            st.caption(" | ".join(meta))
+        preview = first_sentence(abstract, max_len=180)
+        if preview:
+            st.write(preview)
 
-        abstract = p.get("abstract") or ""
-        if abstract:
-            st.write(abstract[:220] + ("…" if len(abstract) > 220 else ""))
-
-        links = []
-        if p.get("url"):
-            links.append(f"[arXiv]({p['url']})")
-        if p.get("pdf_url"):
-            links.append(f"[PDF]({p['pdf_url']})")
-        if links:
-            st.caption(" • ".join(links))
-
-        if st.button("📄 Open", use_container_width=True, key=uk("home", section, "open", paper_id)):
+        b1, b2 = st.columns([1, 1])
+        if b1.button("Open", key=f"{section}:open:{paper_id}", use_container_width=True):
             set_selected_paper(paper_id)
+            st.toast("Opened in Paper", icon="📄")
             goto("Paper")
 
+        # Optional link button (Streamlit has st.link_button in newer versions)
+        if pdf_url:
+            # safest cross-version approach: markdown link
+            b2.markdown(f"[PDF]({pdf_url})")
+        elif url:
+            b2.markdown(f"[arXiv]({url})")
+
 
 # ----------------------------
-# Sidebar
+# Sidebar controls + NAV (this replaces tabs)
 # ----------------------------
 with st.sidebar:
+    st.header("🧭 Navigate")
+    nav = st.radio("Go to", NAV_PAGES, key="nav", label_visibility="collapsed")
+
+    st.divider()
     st.header("⚙️ Settings")
+
     st.subheader("Models")
-    stt_model = st.text_input("Voxtral STT model", value=DEFAULT_STT_MODEL, key=uk("cfg", "stt"))
-    llm_model = st.text_input("Mistral LLM model", value=DEFAULT_LLM_MODEL, key=uk("cfg", "llm"))
+    stt_model = st.text_input("Voxtral STT model", value=DEFAULT_STT_MODEL)
+    llm_model = st.text_input("Mistral LLM model", value=DEFAULT_LLM_MODEL)
 
     st.subheader("ElevenLabs")
-    voice_id = st.text_input("ElevenLabs Voice ID", value=ELEVENLABS_VOICE_ID, key=uk("cfg", "voice"))
-    st.caption("Premade example: EXAVITQu4vr4xnSDxMaL (Sarah)")
+    voice_id = st.text_input("ElevenLabs Voice ID", value=ELEVENLABS_VOICE_ID)
 
     st.subheader("Cost / Safety")
-    max_chars_to_speak = st.slider("Max characters to speak", 200, 4000, 1200, 100, key=uk("cfg", "maxchars"))
+    max_chars_to_speak = st.slider("Max characters to speak", 200, 4000, 1200, 100)
 
-    st.subheader("Personalization")
+    st.divider()
+    st.subheader("Personalization (optional)")
     bucket = _u()
     interests_text = st.text_input(
         "Interests (comma-separated)",
         value=", ".join(bucket["user_profile"].get("interests") or []),
-        placeholder="e.g., agents, recsys, vision-language, eval",
-        key=uk("profile", "interests"),
+        placeholder="e.g., agents, recsys, VLM, RAG, evaluation",
     )
     about_me = st.text_area(
-        "About (optional)",
+        "About",
         value=bucket["user_profile"].get("about_me") or "",
-        placeholder="e.g., I prefer practical papers I can implement quickly.",
-        height=90,
-        key=uk("profile", "about"),
+        placeholder="e.g., I like implementable papers; benchmarks; system design",
+        height=80,
     )
-    if st.button("Save profile", use_container_width=True, key=uk("profile", "save")):
+    if st.button("Save profile", use_container_width=True):
         interests = [x.strip() for x in interests_text.split(",") if x.strip()]
         bucket["user_profile"]["interests"] = interests
         bucket["user_profile"]["about_me"] = about_me.strip()
         st.success("Saved ✅")
 
-    st.divider()
-    if st.button("🔄 Refresh playlists", use_container_width=True, key=uk("pl", "refresh")):
-        bucket["playlists"]["recommended"] = []
+    if st.button("🔄 Refresh playlists", use_container_width=True):
         bucket["playlists"]["trending"] = []
+        bucket["playlists"]["recommended"] = []
         st.success("Will refresh on Home.")
 
 
 # ----------------------------
-# Main UI
+# Recommend query builder (simple)
+# ----------------------------
+def build_recommended_arxiv_query() -> str:
+    bucket = _u()
+    interests = bucket["user_profile"].get("interests") or []
+    hist_titles = []
+    for pid in bucket["history"][:3]:
+        p = get_paper(pid)
+        if p and p.get("title"):
+            hist_titles.append(p["title"])
+
+    tokens: List[str] = []
+    tokens.extend(interests[:5])
+    for t in hist_titles:
+        for w in re.findall(r"[A-Za-z][A-Za-z\-]{2,}", t.lower()):
+            if w not in ("the", "and", "for", "with", "from", "via", "using", "toward", "towards"):
+                tokens.append(w)
+
+    tokens = [t for t in tokens if t][:8]
+    if not tokens:
+        return "cat:cs.AI OR cat:cs.LG OR cat:cs.CL OR cat:cs.CV"
+
+    clauses = [f"all:{tok}" for tok in tokens[:4]]
+    cat = "(cat:cs.AI OR cat:cs.LG OR cat:cs.CL OR cat:cs.CV)"
+    return f"({ ' AND '.join(clauses) }) AND {cat}"
+
+
+# ----------------------------
+# Main
 # ----------------------------
 render_top_bar()
+render_now_playing_compact()
 
-nav = st.radio(
-    "Navigation",
-    ["Home", "Paper", "Chat", "Library"],
-    horizontal=True,
-    key=NAV_KEY,
-    label_visibility="collapsed",
-)
-
-render_last_played_bar()
+bucket = _u()
 
 # ----------------------------
 # HOME
 # ----------------------------
 if nav == "Home":
-    bucket = _u()
+    st.subheader("🏠 Home")
+
+    # Load playlists if empty (cached arXiv makes this fast)
+    if len(bucket["playlists"].get("trending", [])) == 0:
+        with st.spinner("Fetching trending from arXiv…"):
+            papers = arxiv_trending_default(max_results=10)
+            time.sleep(0.15)  # light etiquette
+        bucket["playlists"]["trending"] = [upsert_paper(p) for p in papers]
+
+    if len(bucket["playlists"].get("recommended", [])) == 0:
+        with st.spinner("Building recommended playlist…"):
+            q = build_recommended_arxiv_query()
+            papers = arxiv_query(q, start=0, max_results=10)
+            time.sleep(0.15)
+        bucket["playlists"]["recommended"] = [upsert_paper(p) for p in papers]
+
     left, right = st.columns([1.15, 0.85], gap="large")
 
     with left:
-        st.subheader("🏠 Home")
+        if bucket.get("last_played"):
+            st.markdown("### ⏯️ Continue")
+            paper_card_home(bucket["last_played"], section="continue")
 
-        need_trending = len(bucket["playlists"].get("trending", [])) == 0
-        need_reco = len(bucket["playlists"].get("recommended", [])) == 0
-
-        if need_trending:
-            with st.spinner("Fetching trending papers from arXiv…"):
-                try:
-                    papers = arxiv_trending_default(max_results=12)
-                except Exception as e:
-                    st.warning(f"arXiv trending failed: {e}")
-                    papers = []
-            bucket["playlists"]["trending"] = [upsert_paper(p) for p in papers]
-
-        if need_reco:
-            with st.spinner("Building recommended playlist…"):
-                try:
-                    q = build_recommended_arxiv_query()
-                    papers = arxiv_query(q, start=0, max_results=12)
-                except Exception as e:
-                    st.warning(f"arXiv recommended failed: {e}")
-                    papers = []
-            bucket["playlists"]["recommended"] = [upsert_paper(p) for p in papers]
+        # If they have history, recommended feels personal
+        if bucket["history"]:
+            last_title = (get_paper(bucket["history"][0]) or {}).get("title", "")
+            if last_title:
+                st.caption(f"Because you listened to: **{last_title}**")
 
         st.markdown("### 🎧 Recommended for you")
-        reco_ids = bucket["playlists"].get("recommended", [])[:8]
-        if reco_ids:
-            for pid in reco_ids:
-                paper_card_home(pid, section="reco")
-        else:
-            st.info("No recommendations yet. Add interests in the sidebar and refresh playlists.")
+        for pid in bucket["playlists"].get("recommended", [])[:8]:
+            paper_card_home(pid, section="reco")
 
-        st.markdown("### 🔥 Trending now (latest arXiv)")
-        trend_ids = bucket["playlists"].get("trending", [])[:8]
-        if trend_ids:
-            for pid in trend_ids:
-                paper_card_home(pid, section="trend")
-        else:
-            st.info("No trending papers yet. Refresh playlists in the sidebar.")
+        st.markdown("### 🔥 Trending now")
+        for pid in bucket["playlists"].get("trending", [])[:8]:
+            paper_card_home(pid, section="trend")
 
     with right:
-        st.subheader("🔎 Search (arXiv)")
-        query = st.text_input("Search query", placeholder='e.g., "agentic rag evaluation"', key=uk("search", "q"))
-        n_results = st.slider("Results", 3, 25, 8, 1, key=uk("search", "n"))
+        st.subheader("🔎 Search arXiv")
+        query = st.text_input("Search query", placeholder='e.g., "agentic RAG evaluation"')
+        n_results = st.slider("Results", 3, 25, 8, 1)
 
-        if st.button("Search arXiv", type="primary", use_container_width=True, disabled=not query.strip(), key=uk("search", "go")):
+        if st.button("Search", type="primary", use_container_width=True, disabled=not query.strip()):
             try:
                 with st.spinner("Searching arXiv…"):
                     papers = arxiv_search_free_text(query.strip(), max_results=n_results)
-                    time.sleep(0.2)
+                    time.sleep(0.15)
                 if not papers:
                     st.warning("No results found.")
                 else:
                     ids = [upsert_paper(p) for p in papers]
                     st.success(f"Found {len(ids)} papers ✅")
-                    st.markdown("### Results")
                     for pid in ids:
                         paper_card_home(pid, section="search")
             except Exception as e:
-                st.error(f"arXiv search failed: {e}")
+                st.error(f"Search failed: {e}")
+
+        st.divider()
+        st.caption("Tip for judges: click **Open** on any paper → Paper page.")
+
 
 # ----------------------------
 # PAPER
 # ----------------------------
 elif nav == "Paper":
-    bucket = _u()
     st.subheader("📄 Paper")
 
     pid = bucket.get("selected_paper") or bucket.get("last_played")
@@ -723,127 +698,97 @@ elif nav == "Paper":
         v = get_view(pid)
 
         with st.container(border=True):
-            st.markdown(f"## {p.get('title','Unknown')}")
+            st.markdown(f"## {p.get('title','Untitled')}")
             meta = []
-            authors = p.get("authors") or []
-            if authors:
-                meta.append(", ".join(authors))
+            if p.get("authors"):
+                meta.append(", ".join(p["authors"]))
             if p.get("year"):
                 meta.append(str(p.get("year")))
-            topics = p.get("topics") or []
-            if topics:
-                meta.append(" • ".join(topics))
+            if p.get("topics"):
+                meta.append(" • ".join((p.get("topics") or [])[:6]))
             if p.get("source"):
                 meta.append(p.get("source"))
             if meta:
                 st.caption(" | ".join(meta))
 
+            if p.get("url") or p.get("pdf_url"):
+                links = []
+                if p.get("url"):
+                    links.append(f"[arXiv]({p['url']})")
+                if p.get("pdf_url"):
+                    links.append(f"[PDF]({p['pdf_url']})")
+                st.caption(" • ".join(links))
+
             if p.get("abstract"):
                 st.write(p["abstract"])
 
-            links = []
-            if p.get("url"):
-                links.append(f"[arXiv]({p['url']})")
-            if p.get("pdf_url"):
-                links.append(f"[PDF]({p['pdf_url']})")
-            if links:
-                st.caption(" • ".join(links))
+        st.markdown("### ▶️ One-click demo")
+        c1, c2, c3 = st.columns([1.4, 1, 1])
+        if c1.button("▶ Generate + Narrate Summary", type="primary", use_container_width=True):
+            try:
+                with st.spinner("Generating summary…"):
+                    if v["quick_summary"] is None:
+                        v["quick_summary"] = llm_quick_summary(p, llm_model)
 
-            a1, a2, a3 = st.columns([1, 1, 1])
-            if a1.button("⚡ Summary", use_container_width=True, key=uk("paper", pid, "mode_summary")):
+                speak_text = (v["quick_summary"] or "")[:max_chars_to_speak]
+                with st.spinner("Generating speech…"):
+                    audio_out = elevenlabs_tts(speak_text, voice_id)
+
+                bucket["tts_last_audio"] = audio_out
                 bucket["last_played"] = pid
                 bucket["now_playing_mode"] = "summary"
                 bump_history(pid)
 
-            if a2.button("💬 Ask (Chat)", use_container_width=True, key=uk("paper", pid, "goto_chat")):
-                bucket["last_played"] = pid
-                bucket["now_playing_mode"] = "qa"
-                bump_history(pid)
-                goto("Chat")
+                st.success("Ready ✅")
+                st.audio(audio_out, format="audio/mpeg")
+            except Exception as e:
+                st.error(f"Failed: {e}")
 
-            saved_label = "⭐ Save" if pid not in bucket["saved"] else "✅ Saved"
-            if a3.button(saved_label, use_container_width=True, key=uk("paper", pid, "save_toggle")):
-                if pid in bucket["saved"]:
-                    bucket["saved"].remove(pid)
-                else:
-                    bucket["saved"].add(pid)
-                st.rerun()
+        if c2.button("💬 Ask about this paper", use_container_width=True):
+            bucket["last_played"] = pid
+            bucket["selected_paper"] = pid
+            bump_history(pid)
+            st.session_state.chat_prefill = "Give me the TL;DR and the main contributions."
+            goto("Chat")
+
+        if c3.button("🧠 Generate Deep Dive", use_container_width=True):
+            try:
+                with st.spinner("Generating deep dive…"):
+                    v["deep_dive"] = llm_deep_dive(p, llm_model)
+                st.success("Done ✅")
+            except Exception as e:
+                st.error(f"Deep dive failed: {e}")
 
         st.divider()
-        colA, colB = st.columns([1.05, 0.95], gap="large")
 
+        # Show summary/deep dive if present
+        colA, colB = st.columns([1, 1], gap="large")
         with colA:
             st.markdown("### ⚡ Quick Summary")
-            if v["quick_summary"] is None:
-                if st.button("Generate summary", type="primary", use_container_width=True, key=uk("paper", pid, "gen_quick")):
-                    try:
-                        with st.spinner("Summarizing…"):
-                            v["quick_summary"] = llm_quick_summary(p, llm_model)
-                        st.success("Done ✅")
-                    except Exception as e:
-                        st.error(f"Summary failed: {e}")
-            else:
-                st.text_area("Summary", v["quick_summary"], height=240, key=uk("paper", pid, "quick_text"))
-                if st.button("🗣️ Narrate summary", use_container_width=True, key=uk("paper", pid, "tts_quick")):
-                    try:
-                        speak_text = (v["quick_summary"] or "")[:max_chars_to_speak]
-                        with st.spinner("Generating speech…"):
-                            audio_out = elevenlabs_tts(speak_text, voice_id)
-                        bucket["tts_last_audio"] = audio_out
-                        st.audio(audio_out, format="audio/mpeg")
-                    except Exception as e:
-                        st.error(f"TTS failed: {e}")
-
+            if v["quick_summary"]:
+                st.text_area("Summary", v["quick_summary"], height=240)
         with colB:
             st.markdown("### 🔎 Deep Dive")
-            if v["deep_dive"] is None:
-                if st.button("Generate deep dive", use_container_width=True, key=uk("paper", pid, "gen_deep")):
-                    try:
-                        with st.spinner("Explaining…"):
-                            v["deep_dive"] = llm_deep_dive(p, llm_model)
-                        st.success("Done ✅")
-                    except Exception as e:
-                        st.error(f"Deep dive failed: {e}")
-            else:
-                st.text_area("Deep dive", v["deep_dive"], height=320, key=uk("paper", pid, "deep_text"))
+            if v["deep_dive"]:
+                st.text_area("Deep dive", v["deep_dive"], height=240)
 
-        st.divider()
-        st.markdown("### 💡 Suggested questions")
-        if v["suggested_qs"] is None:
-            if st.button("Generate suggested questions", use_container_width=True, key=uk("paper", pid, "gen_qs")):
-                try:
-                    with st.spinner("Generating…"):
-                        v["suggested_qs"] = llm_suggested_questions(p, llm_model)
-                except Exception as e:
-                    st.error(f"Failed: {e}")
-        else:
-            qs = v["suggested_qs"] or []
-            if not qs:
-                st.info("No suggested questions available.")
-            else:
-                for i, q in enumerate(qs, 1):
-                    if st.button(f"{i}. {q}", key=uk("paper", pid, "qs", str(i)), use_container_width=True):
-                        st.session_state[uk("chat_prefill")] = q
-                        goto("Chat")
 
 # ----------------------------
 # CHAT
 # ----------------------------
 elif nav == "Chat":
-    bucket = _u()
     st.subheader("💬 Chat (Voice + Text)")
 
     pid = bucket.get("selected_paper") or bucket.get("last_played")
     paper = get_paper(pid) if pid else None
 
     if paper:
-        st.caption(f"Scoped to: **{paper.get('title','Unknown')}**")
+        st.caption(f"Scoped to: **{paper.get('title','Untitled')}**")
     else:
         st.caption("No paper selected — general chat mode.")
 
-    st.write("## 1) Speak (recommended)")
-    audio = audiorecorder("🎤 Record", "⏺️ Recording...", key=uk("chat", "recorder"))
-
+    st.write("## 1) Speak")
+    audio = audiorecorder("🎤 Record", "⏺️ Recording...")
     audio_bytes = None
     if len(audio) > 0:
         wav_io = audio.export(format="wav")
@@ -852,14 +797,17 @@ elif nav == "Chat":
         st.success("Recording captured ✅")
 
     st.write("---")
-    prefill_key = uk("chat_prefill")
-    prefill = st.session_state.pop(prefill_key, "") if prefill_key in st.session_state else ""
+    st.write("## 2) Or type")
+
+    prefill = st.session_state.chat_prefill or ""
     typed = st.text_area(
         "Type your question",
         value=prefill,
-        placeholder="e.g., What is the core idea and why does it matter?",
-        key=uk("chat", "typed"),
+        placeholder="e.g., What is the core idea, and what are the limitations?",
     )
+
+    # Clear prefill after displaying once
+    st.session_state.chat_prefill = ""
 
     final_input = None
     mode = None
@@ -874,37 +822,43 @@ elif nav == "Chat":
         st.info("Record audio or type a message to begin.")
     else:
         if mode == "voice":
+            st.write("## 3) Transcribe (Voxtral)")
             try:
-                with st.spinner("Transcribing (Voxtral)…"):
+                with st.spinner("Transcribing…"):
                     transcript = voxtral_transcribe(audio_bytes, "recording.wav", stt_model)
-                st.text_area("Transcript", transcript, height=120, key=uk("chat", "transcript"))
-                user_text = transcript
+                st.text_area("Transcript", transcript, height=110)
             except Exception as e:
                 st.error(f"Transcription failed: {e}")
                 st.stop()
+            user_text = transcript
         else:
             user_text = typed.strip()
 
+        st.write("## 4) Think (Mistral)")
         try:
-            with st.spinner("Thinking (Mistral)…"):
+            with st.spinner("Thinking…"):
                 sys_prompt = paper_aware_system_prompt(paper)
                 messages = [
                     {"role": "system", "content": sys_prompt},
                     {"role": "user", "content": user_text},
                 ]
                 answer = mistral_chat_raw(messages, model=llm_model, temperature=0.2, max_tokens=900)
-            st.text_area("Answer", answer, height=240, key=uk("chat", "answer"))
+
+            st.text_area("Answer", answer, height=220)
+
             if pid:
                 bucket["last_played"] = pid
                 bucket["now_playing_mode"] = "qa"
                 bump_history(pid)
+
         except Exception as e:
             st.error(f"Mistral call failed: {e}")
             st.stop()
 
+        st.write("## 5) Speak (ElevenLabs)")
         speak_text = answer[:max_chars_to_speak]
         try:
-            with st.spinner("Speaking (ElevenLabs)…"):
+            with st.spinner("Generating speech…"):
                 audio_out = elevenlabs_tts(speak_text, voice_id)
             bucket["tts_last_audio"] = audio_out
             st.audio(audio_out, format="audio/mpeg")
@@ -912,14 +866,15 @@ elif nav == "Chat":
             st.error(f"ElevenLabs TTS failed: {e}")
             st.info("You can still use transcript + answer; TTS is optional for the demo.")
 
+
 # ----------------------------
 # LIBRARY
 # ----------------------------
-else:  # Library
-    bucket = _u()
+else:
     st.subheader("📚 Library")
 
     c1, c2 = st.columns([1, 1], gap="large")
+
     with c1:
         st.markdown("### 🕘 History")
         if not bucket["history"]:
@@ -931,7 +886,7 @@ else:  # Library
                     continue
                 with st.container(border=True):
                     st.markdown(f"**{p.get('title','Untitled')}**")
-                    if st.button("📄 Open", use_container_width=True, key=uk("lib", "hist", "open", pid)):
+                    if st.button("Open", key=f"lib_hist_open:{pid}", use_container_width=True):
                         set_selected_paper(pid)
                         goto("Paper")
 
@@ -946,6 +901,6 @@ else:  # Library
                     continue
                 with st.container(border=True):
                     st.markdown(f"**{p.get('title','Untitled')}**")
-                    if st.button("📄 Open", use_container_width=True, key=uk("lib", "saved", "open", pid)):
+                    if st.button("Open", key=f"lib_saved_open:{pid}", use_container_width=True):
                         set_selected_paper(pid)
                         goto("Paper")
