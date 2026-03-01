@@ -20,7 +20,7 @@ ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "EXAVITQu4vr4xnSDxMaL")  
 DEFAULT_LLM_MODEL = os.getenv("MISTRAL_LLM_MODEL", "mistral-tiny-latest")
 DEFAULT_STT_MODEL = os.getenv("MISTRAL_STT_MODEL", "voxtral-mini-transcribe-2507")
 
-st.set_page_config(page_title="VoxScholar", page_icon="🎙️", layout="wide")
+st.set_page_config(page_title="ResearchMix", page_icon="🎙️", layout="wide")
 
 missing = []
 if not MISTRAL_API_KEY:
@@ -554,7 +554,7 @@ def paper_card(paper_id: str, show_actions: bool = True, key_prefix: str = "card
 # ----------------------------
 # Tabs: Home / Paper / Chat / Library
 # ----------------------------
-st.title("🎙️ VoxScholar — Research Paper Player")
+st.title("🎙️ ResearchMix — Spotify for Research Papers")
 st.caption("LLM-generated paper playlists now • arXiv/alphaXiv later • Voice Q&A + narrations")
 
 render_now_playing()
