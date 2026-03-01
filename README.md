@@ -154,9 +154,7 @@ streamlit run app.py
 
 ---
 
-## Team
-
-Team Name: Fair Game
+## Team Fair Game
 
 <table>
   <tr>
