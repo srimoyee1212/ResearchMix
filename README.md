@@ -12,7 +12,8 @@ It transforms static research papers into structured summaries, deep dives, voic
 ## Demo (30 seconds)
 ### IMPORTANT LINKS:
 1. [Demo Video](https://youtu.be/y284MOrSWL8)
-2. [Demo Deck](https://www.canva.com/design/DAHCvo45irc/mUnQXF8pNx0dw4XYHbxzvg/view?utm_content=DAHCvo45irc&utm_campaign=designshare&utm_medium=link2&utm_source=uniquelinks&utlId=h9133345233)
+2. [App Demo Only](https://drive.google.com/file/d/1XmZmkCIhedBRxuJARrGj2CGTc74nAs08/view?usp=sharing)
+3. [Demo Deck](https://www.canva.com/design/DAHCvo45irc/mUnQXF8pNx0dw4XYHbxzvg/view?utm_content=DAHCvo45irc&utm_campaign=designshare&utm_medium=link2&utm_source=uniquelinks&utlId=h9133345233)
 
 ### Guide
 1. Home → Open a recommended paper (personalized via arXiv + user interests)
