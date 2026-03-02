@@ -2,6 +2,8 @@
 import time
 import streamlit as st
 from audiorecorder import audiorecorder
+from researchmix.ui.graph import render_related_paper_graph
+
 
 from researchmix.state import (
     u_bucket,
@@ -188,6 +190,17 @@ def render_paper():
         st.markdown("### 🔎 Deep Dive")
         if v.get("deep_dive"):
             st.text_area("Deep dive", v["deep_dive"], height=240)
+    st.divider()
+    st.markdown("### 🕸️ Connected Papers (Topic Graph)")
+
+    show_graph = st.toggle("Show related graph", value=True, key=f"show_graph_{pid}")
+    if show_graph:
+        render_related_paper_graph(
+            pid,
+            max_neighbors=10,
+            min_overlap=1,
+            height=520,
+        )
 
 
 def render_chat():
