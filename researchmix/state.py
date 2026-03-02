@@ -32,9 +32,14 @@ def _default_user_bucket() -> Dict[str, Any]:
         "selected_paper": None,
         "saved": set(),
         "playlists": {"recommended": [], "trending": []},
+
+        # ✅ NEW: persist search results across reruns so Open works
+        "search_results": [],
+
         "user_profile": {"interests": [], "about_me": ""},
         "now_playing_mode": "summary",
         "tts_last_audio": None,
+
         # keep settings per-user (matches your behavior; easy for demo)
         "settings": {
             "llm_model": env["DEFAULT_LLM_MODEL"],

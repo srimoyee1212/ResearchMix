@@ -68,20 +68,34 @@ def render_home():
         query = st.text_input("Search query", placeholder='e.g., "agentic RAG evaluation"')
         n_results = st.slider("Results", 3, 25, 8, 1)
 
+        # ✅ Perform search and persist ids
         if st.button("Search", type="primary", use_container_width=True, disabled=not query.strip()):
             try:
                 with st.spinner("Searching arXiv…"):
                     papers = arxiv_search_free_text(query.strip(), max_results=n_results)
                     time.sleep(0.15)
+
                 if not papers:
+                    bucket["search_results"] = []
                     st.warning("No results found.")
                 else:
                     ids = [upsert_paper(p) for p in papers]
+                    bucket["search_results"] = ids  # ✅ persist across reruns
                     st.success(f"Found {len(ids)} papers ✅")
-                    for pid in ids:
-                        paper_card_home(pid, section="search")
+
             except Exception as e:
+                bucket["search_results"] = []
                 st.error(f"Search failed: {e}")
+
+        # ✅ Always render persisted results (so Open works reliably)
+        if bucket.get("search_results"):
+            st.markdown("### Results")
+            for pid in bucket["search_results"]:
+                paper_card_home(pid, section="search")
+
+            if st.button("Clear results", use_container_width=True):
+                bucket["search_results"] = []
+                st.rerun()
 
         st.divider()
         st.caption("Tip for judges: click **Open** on any paper → Paper page.")

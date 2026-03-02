@@ -96,7 +96,9 @@ with st.sidebar:
     if st.button("🔄 Refresh playlists", use_container_width=True):
         bucket["playlists"]["trending"] = []
         bucket["playlists"]["recommended"] = []
-        st.success("Will refresh on Home.")
+        bucket["search_results"] = []          # NEW: clear search results too
+        st.session_state.nav_target = "Home"   # jump to Home so judges see change
+        st.rerun()
 
 
 # ----------------------------
