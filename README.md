@@ -1,4 +1,4 @@
-# ResearchMix 🎧🎙️  
+# ResearchMix 🎧🎙️  | MISTRAL AI HACKATHON 2026
 **Your Spotify for Research Papers**  
 
 Discover → Summarize → Ask → Listen
