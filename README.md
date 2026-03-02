@@ -1,4 +1,4 @@
-# ResearchMix 🎧🎙️  | MISTRAL AI HACKATHON 2026
+# ResearchMix 🎧🎙️  | <img width="27" height="27" alt="image" src="https://github.com/user-attachments/assets/2161aa00-3f05-4f58-b489-537a0aacc6ab" /> MISTRAL AI HACKATHON 2026
 **Your Spotify for Research Papers**  
 
 Discover → Summarize → Ask → Listen
