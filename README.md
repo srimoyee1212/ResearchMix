@@ -1,32 +1,40 @@
 # ResearchMix 🎧🎙️  
-**Talk to research papers like they’re a playlist.**  
-Record → **Voxtral** transcribes → **Mistral** reasons → **ElevenLabs** narrates.
+**Your Spotify for Research Papers**  
 
-**Team:** Fair Game
+Discover → Summarize → Ask → Listen
 
-ResearchMix is an audio-first “Spotify for research papers” experience: it remembers what you last played, recommends a paper playlist, and lets you ask questions by voice—so you can learn hands-free while commuting, cooking, or coding.
+Team: Fair Game
 
+ResearchMix is an audio-first, interactive research experience powered by live arXiv data.
+It transforms static research papers into structured summaries, deep dives, voice conversations, and connected discovery graphs — so you can learn hands-free while commuting, cooking, or coding.
 ---
 
 ## Demo (30 seconds)
-1. Open **Home** → click **Play** on a recommended/trending paper  
-2. Go to **Paper** → generate **Quick Summary** → click **Narrate summary**  
-3. Go to **Chat** → ask by voice:  
-   - “What’s the main contribution?”  
-   - “What are the limitations?”  
-   - “How would I implement this?”  
-4. Show **Library** → saved papers + listening history
+1. Home → Open a recommended paper (personalized via arXiv + user interests)
+
+2. Paper → Click Generate + Narrate Summary
+
+3. Click Ask about this paper → ask by voice
+
+4. “What’s the core contribution?”
+
+5. “What are the limitations?”
+
+6. Scroll to Connected Papers Graph → click a node → jump instantly
+
+7. Show Library → listening history + saved papers
 
 ---
 
-## What it does (Hackathon MVP)
-### 🎶 Paper Player UX
-- **Now Playing / Continue**: resume your last played paper instantly
-- **Recommended playlist**: personalized suggestions (LLM-generated metadata for MVP)
-- **Trending playlist**: great default for new users (LLM-generated metadata for MVP)
-- **Library**: history + saved papers
+## What it does 
+### 🎶 Smart Paper Discovery (Live arXiv)
+- Real-time arXiv API integration
+- Personalized recommendations based on user interests + listening history
+- Trending research (cs.AI, cs.LG, cs.CL, cs.CV)
+- Full-text arXiv search
+- Continue listening to last played paper
 
-### 📄 Paper modes
+### 📄 Paper Intelligence
 - **Quick Summary**: TL;DR + key bullets + “when to use”
 - **Deep Dive**: structured explanation designed for narration
 - **Voice Q&A**: ask questions about the selected paper and get spoken answers back
@@ -37,9 +45,15 @@ ResearchMix is an audio-first “Spotify for research papers” experience: it r
 - **Mistral LLM** for summaries, deep dives, recommendations, and Q&A
 - **ElevenLabs TTS** for spoken narration
 
+### 🕸️ Connected Paper Graph
+- Visualizes topical relationships between papers
+- Based on shared arXiv categories
+- Clickable nodes for instant navigation
+- Turns linear reading into graph-based exploration
+
 ---
 
-## Agentic / Agentic Workflows (highlight)
+## 🧠 Agent-Inspired Workflow
 ResearchMix uses an **agentic workflow pattern**: the app orchestrates multiple specialized “roles” (agents) in a deterministic pipeline:
 
 - **Curator Agent** (LLM): generates trending/recommended playlists and synthesizes paper metadata for discovery
@@ -71,7 +85,7 @@ ResearchMix turns papers into an **interactive audio experience**—listen first
 
 ### High-level flow
 1. User selects a paper (Recommended/Trending/Search)
-2. User chooses mode: Summary / Deep Dive / Q&A
+2. User chooses mode: Summary / Deep Dive / Q&A / Connected Papers
 3. If voice: STT transcribes → LLM responds → TTS narrates
 
 ---
@@ -107,40 +121,9 @@ MISTRAL_STT_MODEL=voxtral-mini-transcribe-2507
 ```bash
 streamlit run app.py
 ```
-
+> Once you run this, you can also open the same on your phone using the computer/laptop's IP and correct port.
 ---
 
-## How to use
-
-### Home
-
-- See Continue (last played)
-
-- Browse Recommended and Trending
-
-- Use Search (LLM-synth MVP) to generate relevant papers
-
-### Paper
-
-- Generate Quick Summary and Deep Dive
-
-- Click Narrate to listen
-
-### Chat
-
-- Ask questions via voice or text
-
-- Responses are paper-scoped to the selected paper
-
-### Library
-
-- History: previously played papers
-
-- Saved: bookmarked papers
-
-- Quick access to playlists
-
----
 
 ## Cost/safety controls
 
